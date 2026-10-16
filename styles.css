@@ -17,3 +17,6 @@ dialog{color:var(--text);background:var(--surface);border:1px solid var(--line);
 
 @media(max-width:760px){.hero-buttons .button{min-height:44px}.hero-shuffle{width:44px;height:44px}.chip{min-height:44px}.track{grid-template-columns:43px minmax(0,1fr) 35px 44px;gap:9px}.track .icon-button{width:44px;height:44px}.mini-player .icon-button{width:44px;height:44px}.range{height:36px}.range::-webkit-slider-thumb{width:16px;height:16px;margin-top:-6px}}
 @media(max-width:360px){.hero-shuffle{width:38px}.track{grid-template-columns:40px minmax(0,1fr) 32px 44px;gap:7px}}
+
+.mini-info span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:360px){.image-caption,.image-label{display:none}}
