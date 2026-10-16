@@ -234,7 +234,7 @@ if('mediaSession'in navigator)for(const [action,fn]of Object.entries({play:()=>a
 async function init(){
   setupTelegram();
   try{
-    const response=await fetch(config.catalog||'./api/catalog');if(!response.ok)throw Error('Каталог не загрузился');const data=await response.json();
+    const response=await fetch(config.catalog||'./api/catalog',{cache:'no-cache'});if(!response.ok)throw Error('Каталог не загрузился');const data=await response.json();
     state.tracks=data.tracks;state.byId=new Map(data.tracks.map(t=>[t.id,t]));state.stats=data.stats||{};
     for(const id of state.favorites)if(!state.byId.has(id))state.favorites.delete(id);
     const full=state.tracks.filter(t=>t.full_length&&t.status==='ready').length,music=state.tracks.filter(t=>['cover','music'].includes(t.classification)&&t.status==='ready').length,all=state.tracks.filter(t=>t.status==='ready').length;
