@@ -19,4 +19,5 @@ dialog{color:var(--text);background:var(--surface);border:1px solid var(--line);
 @media(max-width:360px){.hero-shuffle{width:38px}.track{grid-template-columns:40px minmax(0,1fr) 32px 44px;gap:7px}}
 
 .mini-info span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:760px){.detail-panel{scroll-margin-top:76px}}
 @media(max-width:360px){.image-caption,.image-label{display:none}}

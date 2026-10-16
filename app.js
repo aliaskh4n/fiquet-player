@@ -68,6 +68,10 @@ function setDetail(tab){
   $('lyrics-tab').setAttribute('aria-selected',String(tab==='lyrics'));$('queue-tab').setAttribute('aria-selected',String(tab==='queue'));
   if(tab==='queue')renderQueue();
 }
+function openDetail(tab){
+  setDetail(tab);
+  if(window.matchMedia('(max-width:760px)').matches)document.querySelector('.detail-panel').scrollIntoView({behavior:'smooth',block:'start'});
+}
 
 function renderCurrent(){
   const t=selected();if(!t)return;
@@ -213,7 +217,7 @@ $('shuffle').onclick=()=>{state.shuffle=!state.shuffle;if(state.shuffle)state.qu
 $('repeat').onclick=()=>{state.repeat={off:'all',all:'one',one:'off'}[state.repeat];renderPlayState();persist();haptic()};
 $('seek').addEventListener('input',()=>{const total=Number.isFinite(audio.duration)?audio.duration:0;if(total)audio.currentTime=Number($('seek').value)/1000*total;updateTime()});
 $('seek').addEventListener('pointerdown',()=>{seeking=true});window.addEventListener('pointerup',()=>{seeking=false;updateTime()});$('seek').addEventListener('blur',()=>{seeking=false});
-$('open-lyrics').onclick=()=>setDetail('lyrics');$('open-queue').onclick=()=>setDetail('queue');$('lyrics-tab').onclick=()=>setDetail('lyrics');$('queue-tab').onclick=()=>setDetail('queue');
+$('open-lyrics').onclick=()=>openDetail('lyrics');$('open-queue').onclick=()=>openDetail('queue');$('lyrics-tab').onclick=()=>setDetail('lyrics');$('queue-tab').onclick=()=>setDetail('queue');
 $('player-menu').onclick=()=>showMenu(state.current);$('share-track').onclick=()=>share(state.current);
 $('find-lyrics').onclick=()=>{$('lyrics-search').hidden=!$('lyrics-search').hidden;if(!$('lyrics-search').hidden){$('lyrics-query').value=title(selected());$('lyrics-query').focus()}};
 $('lyrics-search-button').onclick=findLyrics;$('lyrics-query').addEventListener('keydown',e=>{if(e.key==='Enter')findLyrics()});
