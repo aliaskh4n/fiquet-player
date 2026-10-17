@@ -90,3 +90,38 @@
   .karaoke-header{height:48px}
   .karaoke-lines .lyric-line{font-size:24px;padding-block:16px}
 }
+
+/* Telegram owns the window chrome; song and text fill the webview at every size. */
+.player-details{min-width:0}
+:root[data-telegram=true] :is(.player-dialog,.karaoke-dialog){
+  position:fixed;inset:0;margin:0;width:100%;max-width:none;
+  height:min(var(--tg-viewport-stable-height,100dvh),100dvh);max-height:none;
+  border:0;border-radius:0;
+}
+:root[data-telegram=true] .player-dialog{
+  padding:calc(var(--safe-top) + var(--content-top)) calc(var(--safe-right) + var(--content-right)) calc(var(--safe-bottom) + var(--content-bottom)) calc(var(--safe-left) + var(--content-left));
+}
+:root[data-telegram=true] .karaoke-dialog{
+  padding-top:calc(var(--safe-top) + var(--content-top));padding-bottom:var(--content-bottom);
+}
+:root[data-telegram=true] :is(.player-dialog,.karaoke-dialog)::backdrop{background:var(--bg)}
+:root[data-telegram=true] body:has(#player-dialog[open],#karaoke-dialog[open]) > :is(.sidebar,.main,.mini-player,.mobile-nav){visibility:hidden}
+@media(min-width:761px){
+  :root[data-telegram=true] .player-layout{
+    width:100%;max-width:1160px;min-height:100%;padding:40px clamp(32px,5vw,64px);align-items:center;
+  }
+  :root[data-telegram=true] .playback-panel{
+    display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);align-items:center;gap:clamp(32px,5vw,80px);
+  }
+  :root[data-telegram=true] .large-art{width:100%;max-width:min(520px,calc(100dvh - 100px));margin:0 auto}
+  :root[data-telegram=true] .now-heading{margin-top:0}
+  :root[data-telegram=true] .now-heading h2{font-size:clamp(24px,2.4vw,34px)}
+  :root[data-telegram=true] .now-heading p{font-size:14px;line-height:1.5}
+  :root[data-telegram=true] .seek-wrap{margin-top:28px}
+  :root[data-telegram=true] .player-details>.player-controls{margin-top:24px}
+  :root[data-telegram=true] .player-extras{margin-top:28px}
+  :root[data-telegram=true] .play-error:empty{display:none}
+  :root[data-telegram=true] .karaoke-lines{padding-left:calc(48px + var(--safe-left) + var(--content-left));padding-right:calc(48px + var(--safe-right) + var(--content-right))}
+  :root[data-telegram=true] .karaoke-lines .lyric-line{max-width:760px;margin-inline:auto}
+  :root[data-telegram=true] .karaoke-transport{padding-left:calc(24px + var(--safe-left) + var(--content-left));padding-right:calc(24px + var(--safe-right) + var(--content-right))}
+}
