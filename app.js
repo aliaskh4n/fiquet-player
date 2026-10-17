@@ -225,6 +225,7 @@ $('see-full').onclick=()=>{setScope('full');$('list-title').scrollIntoView({beha
 $('play-full').onclick=()=>{const queue=state.tracks.filter(t=>t.full_length&&t.audio_url).map(t=>t.id);if(queue[0])playTrack(queue[0],{queue})};
 $('hero-shuffle').onclick=()=>{state.shuffle=true;const queue=shuffleQueue(state.tracks.filter(t=>['cover','music'].includes(t.classification)&&t.audio_url).map(t=>t.id));if(queue[0])playTrack(queue[0],{queue})};
 $('expand-player').onclick=()=>showPlayer();$('mini-play').onclick=togglePlay;$('play').onclick=togglePlay;$('karaoke-play').onclick=togglePlay;
+for(const id of ['player-menu','now-menu'])$(id).onclick=()=>state.current&&showMenu(state.current);
 for(const id of ['mini-favorite','now-favorite'])$(id).onclick=()=>state.current&&toggleFavorite(state.current);
 $('mini-next').onclick=()=>advance();$('next').onclick=()=>advance();$('previous').onclick=()=>advance(-1);
 $('shuffle').onclick=()=>{state.shuffle=!state.shuffle;if(state.shuffle)state.queue=shuffleQueue(state.queue,state.current);renderPlayState();persist();haptic()};
