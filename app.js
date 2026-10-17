@@ -183,6 +183,7 @@ function lyricUnavailable(){
   return state.lyricStatus==='loading'?['Загружаем текст…','Текст и тайминги уже сохранены на сайте.']:state.lyricStatus==='error'?['Текст временно недоступен','Не удалось загрузить подготовленный текст. Повторим при следующем открытии.']:['Точный текст пока не найден','Для этой записи ещё не удалось подтвердить слова песни и их тайминги.'];
 }
 function renderLyrics(){
+  delete $('lyrics-content').dataset.activeLyricIndex;
   const lyric=state.lyric;
   if(!lyric){const [heading,description]=lyricUnavailable();$('lyrics-content').innerHTML=`<div class="lyrics-empty">${icon('text')}<h3>${heading}</h3><p>${description}</p></div>`;renderKaraoke();return}
   const sourceUrl=/^https:\/\//.test(lyric.sourceUrl||'')?lyric.sourceUrl:null;
@@ -191,6 +192,7 @@ function renderLyrics(){
 }
 function lyricMarkup(lines){return lines.map((line,i)=>`<button class="lyric-line" data-lyric-line="${i}" aria-label="Перейти к ${formatTime(line.time)}">${esc(line.text)||'♪'}</button>`).join('')}
 function renderKaraoke(){
+  delete $('karaoke-lines').dataset.activeLyricIndex;
   const lyric=state.lyric,lines=lyric?.lines||[];
   $('karaoke-title').textContent=title(selected());
   if(lines.length)$('karaoke-lines').innerHTML=lyricMarkup(lines);
@@ -201,13 +203,11 @@ function renderKaraoke(){
 }
 function highlightLyrics(force=false){
   if(!state.lyric?.lines?.length)return;
-  let index=activeLyric(state.lyric.lines,audio.currentTime,state.lyric.offset||0);
-  const current=state.lyric.lines[index],clock=audio.currentTime+(state.lyric.offset||0);
-  if(Number.isFinite(current?.end)&&clock>current.end+1&&(!state.lyric.lines[index+1]||state.lyric.lines[index+1].time-clock>1))index=-1;
+  const index=activeLyric(state.lyric.lines,audio.currentTime,state.lyric.offset||0),displayIndex=Math.max(0,index);
   for(const root of [$('lyrics-content'),$('karaoke-lines')]){
     if(root===$('karaoke-lines')?!$('karaoke-dialog').open:(!$('player-dialog').open||$('lyrics-panel').hidden))continue;
-    const old=root.querySelector('.lyric-line.active'),changed=old?.dataset.lyricLine!==String(index),line=root.querySelector(`[data-lyric-line="${index}"]`);
-    if(changed||force){root.querySelectorAll('.lyric-line').forEach(el=>{const i=Number(el.dataset.lyricLine);el.classList.toggle('active',i===index);el.classList.toggle('past',i<index);el.setAttribute('aria-current',i===index?'true':'false')});
+    const changed=root.dataset.activeLyricIndex!==String(index),line=root.querySelector(`[data-lyric-line="${displayIndex}"]`);
+    if(changed||force){root.dataset.activeLyricIndex=String(index);root.querySelectorAll('.lyric-line').forEach(el=>{const i=Number(el.dataset.lyricLine);el.classList.toggle('active',i===index);el.classList.toggle('past',i<index);el.setAttribute('aria-current',i===index?'true':'false')});
       if(line&&(root!==$('karaoke-lines')||state.follow)){
         const box=root===$('karaoke-lines')?root:line.parentElement;
         box.style.setProperty('--lyrics-spacer',`${box.clientHeight/2}px`);
