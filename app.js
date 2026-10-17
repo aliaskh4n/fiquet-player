@@ -68,7 +68,7 @@ function showKaraoke(){
   state.follow=true;$('karaoke-follow').hidden=true;renderKaraoke();showDialog('karaoke');highlightLyrics(true);haptic();
   ensureKaraokeText();
 }
-function lyricCacheKey(t){return 'prepared-lyrics:'+t.id+':'+(t.lyrics_version||'1')}
+function lyricCacheKey(t){return 'original-lyrics-v2:'+t.id+':'+(t.lyrics_version||'1')}
 function ensureKaraokeText(){
   const t=selected();if(!t||state.lyricStatus==='loading')return;
   if(state.lyric){state.lyricStatus='ready';renderLyrics();return}
@@ -85,7 +85,8 @@ async function loadPreparedLyrics(t){
     if(data.status!=='ready')throw Error('unavailable');
     const lines=transcriptLines(data,t.duration_seconds||Infinity);if(!lines.length)throw Error('unavailable');
     if(request!==state.lyricRequest||state.current!==t.id)return;
-    state.lyric={lines,offset:0,source:'Субтитры этой записи · распознаны заранее',timing:'recording-subtitles',unclear:Boolean(data.verification?.unclear_lines)};
+    if(data.origin!=='original_lyrics'||!data.verification?.source_text_checked)throw Error('unavailable');
+    state.lyric={lines,offset:0,source:'Текст песни · тайминги этого кавера',sourceUrl:data.source_url,song:data.song,artist:data.artist,timing:'cover-lines'};
     write(lyricCacheKey(t),state.lyric);state.lyricStatus='ready';renderLyrics();
   }catch(error){
     if(request!==state.lyricRequest||state.current!==t.id)return;
@@ -179,12 +180,13 @@ async function share(id){
 }
 
 function lyricUnavailable(){
-  return state.lyricStatus==='loading'?['Загружаем субтитры…','Текст уже подготовлен и сохранён на сайте.']:state.lyricStatus==='error'?['Текст временно недоступен','Не удалось загрузить подготовленный текст. Повторим при следующем открытии.']:['Слова не распознаны','В этой записи не удалось разобрать речь или вокал.'];
+  return state.lyricStatus==='loading'?['Загружаем текст…','Текст и тайминги уже сохранены на сайте.']:state.lyricStatus==='error'?['Текст временно недоступен','Не удалось загрузить подготовленный текст. Повторим при следующем открытии.']:['Точный текст пока не найден','Для этой записи ещё не удалось подтвердить слова песни и их тайминги.'];
 }
 function renderLyrics(){
   const lyric=state.lyric;
   if(!lyric){const [heading,description]=lyricUnavailable();$('lyrics-content').innerHTML=`<div class="lyrics-empty">${icon('text')}<h3>${heading}</h3><p>${description}</p></div>`;renderKaraoke();return}
-  $('lyrics-content').innerHTML=`<div class="lyrics-body">${lyricMarkup(lyric.lines)}</div><p class="lyric-source">${esc(lyric.source)}</p>`;
+  const sourceUrl=/^https:\/\//.test(lyric.sourceUrl||'')?lyric.sourceUrl:null;
+  $('lyrics-content').innerHTML=`<div class="lyrics-body">${lyricMarkup(lyric.lines)}</div><p class="lyric-source">${esc(lyric.source)}${sourceUrl?` · <a href="${esc(sourceUrl)}" target="_blank" rel="noopener noreferrer">Источник текста</a>`:''}</p>`;
   renderKaraoke();highlightLyrics(true);
 }
 function lyricMarkup(lines){return lines.map((line,i)=>`<button class="lyric-line" data-lyric-line="${i}" aria-label="Перейти к ${formatTime(line.time)}">${esc(line.text)||'♪'}</button>`).join('')}
@@ -194,7 +196,7 @@ function renderKaraoke(){
   if(lines.length)$('karaoke-lines').innerHTML=lyricMarkup(lines);
   else{const [heading,description]=lyricUnavailable();$('karaoke-lines').innerHTML=`<div class="lyrics-empty"><h3>${heading}</h3><p>${description}</p></div>`}
   $('karaoke-mode').textContent='fiquet · караоке';
-  $('karaoke-status').textContent=lines.length?(lyric.unclear?'Есть неразборчивые фрагменты':'Субтитры записи · построчная подсветка'):state.lyricStatus==='loading'?'Загружаем подготовленный текст…':'';
+  $('karaoke-status').textContent=lines.length?'Текст песни · построчная подсветка':state.lyricStatus==='loading'?'Загружаем подготовленный текст…':'';
   updateTime();
 }
 function highlightLyrics(force=false){
