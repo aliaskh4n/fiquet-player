@@ -27,7 +27,7 @@ export function filterTracks(tracks, {scope='cover', query='', favorites=[]}={})
     if (source) return t.source_url === source || t.related_urls?.includes(source);
     if (scope === 'favorites' && !favorites.includes(t.id)) return false;
     if (scope === 'full' && (!t.full_length || t.status !== 'ready')) return false;
-    if (scope === 'karaoke' && (!t.lyrics_sync_url || t.status !== 'ready')) return false;
+    if (scope === 'karaoke' && (!t.lyrics_ready || t.status !== 'ready')) return false;
     if (scope === 'cover' && (!['cover','music'].includes(t.classification) || t.status !== 'ready')) return false;
     if (scope === 'candidate' && (t.classification !== 'candidate' || t.status !== 'ready')) return false;
     if (scope === 'all' && t.status !== 'ready') return false;
@@ -62,19 +62,10 @@ export function parseLrc(text) {
   return lines.map(l=>({...l,time:l.time+offset,...(l.words?{words:l.words.map(w=>({...w,time:w.time+offset}))}:{})})).sort((a,b)=>a.time-b.time);
 }
 export function lyricWordProgress(words,index,time,lineEnd=Infinity){
-  const start=words[index]?.time,end=words[index+1]?.time??lineEnd;
+  const start=words[index]?.time,end=words[index]?.end??words[index+1]?.time??lineEnd;
   if(!Number.isFinite(start)||time<start)return 0;
   if(!Number.isFinite(end)||end<=start)return 1;
   return Math.max(0,Math.min(1,(time-start)/(end-start)));
-}
-export function lyricMatchScore(track,result){
-  const tokens=value=>String(value||'').toLocaleLowerCase('ru').replace(/[^\p{L}\p{N}\s]/gu,' ').split(/\s+/).filter(x=>x.length>1&&!['кавер','разбор','fiquet','дар'].includes(x));
-  const query=tokens(track.display_title||track.title),name=tokens(result.trackName);
-  if(!query.length||!name.length)return 0;
-  const shared=name.filter(x=>query.includes(x)).length;
-  const titleScore=shared/name.length;
-  const artist=tokens(result.artistName),artistScore=artist.length?artist.filter(x=>query.includes(x)).length/artist.length:0;
-  return titleScore*.8+artistScore*.2;
 }
 export function telegramThemeVars(params={}){
   const vars={};
@@ -83,10 +74,16 @@ export function telegramThemeVars(params={}){
   return vars;
 }
 export function coverTimedLines(plain,alignment,duration=Infinity){
-  const textLines=String(plain).split(/\r?\n/).map(s=>s.trim()).filter(s=>s&&!/^\[[^\]]+\]$/.test(s));
+  const textLines=String(plain).split(/\r?\n/).map(s=>s.trim().normalize('NFC')).filter(s=>s&&!/^\[[^\]]+\]$/.test(s));
   if(!Array.isArray(alignment?.lines))return [];
   return alignment.lines.filter(l=>Number.isInteger(l.index)&&l.index>=0&&l.index<textLines.length&&Number.isFinite(l.start)&&l.start>=0&&l.start<duration&&Number.isFinite(l.end)&&l.end>=l.start)
-    .map(l=>({time:l.start,end:l.end,text:textLines[l.index]})).sort((a,b)=>a.time-b.time);
+    .map(l=>{
+      const text=textLines[l.index],matches=[...text.matchAll(/[\p{L}\p{N}_]+/gu)];
+      const mapped=new Map((l.words||[]).filter(w=>Number.isInteger(w.index)&&w.index>=0&&w.index<matches.length&&Number.isFinite(w.start)&&w.start>=l.start&&w.start<=l.end&&Number.isFinite(w.end)&&w.end>=w.start&&w.end<=l.end).map(w=>[w.index,w]));
+      // Word highlights use actual matched word timestamps; incomplete lines stay line-based.
+      const words=matches.length&&mapped.size===matches.length?matches.map((match,i)=>({time:mapped.get(i).start,end:mapped.get(i).end,text:text.slice(i===0?0:match.index,matches[i+1]?.index??text.length)})):null;
+      return {time:l.start,end:l.end,text,...(words?{words}:{})};
+    }).sort((a,b)=>a.time-b.time);
 }
 export function activeLyric(lines, time, offset=0) {
   let index=-1;

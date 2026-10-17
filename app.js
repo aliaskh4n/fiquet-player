@@ -1,4 +1,4 @@
-import {formatTime,formatCount,cleanTitle,filterTracks,shuffleQueue,nextId,parseLrc,activeLyric,lyricWordProgress,lyricMatchScore,telegramThemeVars,coverTimedLines} from './core.mjs?v=706c7b2e8c4b';
+import {formatTime,formatCount,cleanTitle,filterTracks,shuffleQueue,nextId,activeLyric,lyricWordProgress,telegramThemeVars,coverTimedLines} from './core.mjs?v=acde295473cc';
 
 const $=id=>document.getElementById(id), audio=$('audio'), config=window.FIQUET_CONFIG||{};
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -9,7 +9,7 @@ const stored=read('session',{}), savedFavorites=read('favorites',[]);
 const params=new URLSearchParams(location.search);
 const scopes=['cover','full','all','candidate','unavailable','karaoke'];
 const state={tracks:[],byId:new Map(),stats:{},view:'library',scope:scopes.includes(params.get('scope'))?params.get('scope'):'cover',query:'',visible:60,
-  favorites:new Set(Array.isArray(savedFavorites)?savedFavorites.filter(Number.isInteger):[]),current:null,queue:[],shuffle:false,repeat:'off',menuTrack:null,lyric:null,lyricSearch:[],lyricRequest:0,loading:false,autoTried:new Set(),sync:null,follow:true};
+  favorites:new Set(Array.isArray(savedFavorites)?savedFavorites.filter(Number.isInteger):[]),current:null,queue:[],shuffle:false,repeat:'off',menuTrack:null,lyric:null,lyricStatus:'idle',lyricRequest:0,loading:false,follow:true};
 let saveTime=0,toastTimer,seekRestore=null,playRequest=0,seeking=false;
 const tg=window.Telegram?.WebApp;
 const inTelegram=Boolean(tg?.initData);
@@ -26,7 +26,7 @@ function safeSource(url){try{const u=new URL(url);return ['http:','https:'].incl
 function renderCatalog(){
   const rows=filtered(), shown=rows.slice(0,state.visible);
   $('list-count').textContent=formatCount(rows.length);
-  const names={cover:'Все каверы и музыка',full:'Полные записи',karaoke:'Караоке с таймингами кавера',all:'Вся музыка',candidate:'Музыкальные записи',unavailable:'Пока недоступны'};
+  const names={cover:'Все каверы и музыка',full:'Полные записи',karaoke:'Караоке',all:'Вся музыка',candidate:'Музыкальные записи',unavailable:'Пока недоступны'};
   $('list-title').textContent=state.view==='favorites'?'Твои записи':state.query?'Результаты поиска':names[state.scope];
   $('filters').hidden=state.view==='favorites';
   document.querySelectorAll('[data-scope]').forEach(b=>b.classList.toggle('active',b.dataset.scope===state.scope));
@@ -41,7 +41,7 @@ function renderFeatured(){
   const full=state.tracks.filter(t=>t.full_length&&t.status==='ready');
   const picks=[1079,1071,1073,1081].map(id=>full.find(t=>t.id===id)).filter(Boolean);
   const chosen=picks.length===4?picks:full.slice(0,4);
-  $('featured').innerHTML=chosen.map(t=>`<button class="featured-card" data-play="${t.id}" aria-label="Слушать: ${esc(title(t))}"><div class="featured-art">${art(t)}${t.lyrics_sync_url?'<span class="karaoke-badge">Караоке</span>':''}<span class="featured-play">${icon('play')}</span></div><strong>${esc(title(t))}</strong><small>fiquet · ${formatTime(t.duration_seconds)}</small></button>`).join('');
+  $('featured').innerHTML=chosen.map(t=>`<button class="featured-card" data-play="${t.id}" aria-label="Слушать: ${esc(title(t))}"><div class="featured-art">${art(t)}${t.lyrics_ready?'<span class="karaoke-badge">Караоке</span>':''}<span class="featured-play">${icon('play')}</span></div><strong>${esc(title(t))}</strong><small>fiquet · ${formatTime(t.duration_seconds)}</small></button>`).join('');
 }
 function setView(view){
   state.view=view;state.query='';state.visible=60;$('search').value='';$('clear-search').hidden=true;
@@ -61,35 +61,40 @@ function closeDialog(name){$(name+'-dialog').close();syncBack()}
 function closeTop(){const open=[...document.querySelectorAll('dialog[open]')];if(open.length)open.at(-1).close();syncBack()}
 function showPlayer(tab='lyrics'){
   if(!selected()){toast('Сначала выбери запись');return}
-  renderCurrent();renderQueue();showDialog('player');setDetail(tab);haptic();
+  renderCurrent();renderQueue();showDialog('player');setDetail(tab);ensureKaraokeText();haptic();
 }
 function showKaraoke(){
   if(!selected()){toast('Сначала выбери запись');return}
   state.follow=true;$('karaoke-follow').hidden=true;renderKaraoke();showDialog('karaoke');highlightLyrics(true);haptic();
   ensureKaraokeText();
 }
+function lyricCacheKey(t){return 'prepared-lyrics:'+t.id+':'+(t.lyrics_version||'1')}
 function ensureKaraokeText(){
-  const t=selected();if(!t||state.autoTried.has(t.id))return;
-  if(t.lyrics_sync_url&&(!state.lyric||(state.lyric.external&&!['cover','cover-auto'].includes(state.lyric.timing)))){state.autoTried.add(t.id);loadCoverLyrics(t);return}
-  if(!state.lyric&&!/^Запись #/i.test(title(t))){state.autoTried.add(t.id);$('lyrics-query').value=title(t);findLyrics(true)}
+  const t=selected();if(!t||state.lyricStatus==='loading')return;
+  if(state.lyric){state.lyricStatus='ready';renderLyrics();return}
+  if(!t.lyrics_ready||!t.lyrics_url){state.lyricStatus='unavailable';renderLyrics();return}
+  loadPreparedLyrics(t);
 }
-async function loadCoverLyrics(t){
-  const request=++state.lyricRequest;$('karaoke-status').textContent='Загружаем текст и тайминги кавера…';
+async function loadPreparedLyrics(t){
+  const request=++state.lyricRequest;let stage='manifest';state.lyricStatus='loading';renderLyrics();delete $('lyrics-content').dataset.loadError;
   try{
-    const ar=await fetch(t.lyrics_sync_url,{cache:'no-cache',signal:AbortSignal.timeout(15000)});if(!ar.ok)throw Error('timing');const timing=await ar.json();
-    if(!Number.isInteger(timing.provider_id))throw Error('provider');
-    const response=await fetch(`https://lrclib.net/api/get/${timing.provider_id}`,{signal:AbortSignal.timeout(15000)});if(!response.ok)throw Error('lyrics');const data=await response.json();
-    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(data.plainLyrics||''));const hash=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
-    if(hash!==timing.plain_sha256)throw Error('text changed');const lines=coverTimedLines(data.plainLyrics,timing,t.duration_seconds||Infinity);if(lines.length<5)throw Error('not enough lines');
+    const ar=await fetch(t.lyrics_url,{cache:'no-cache',signal:AbortSignal.timeout(20000)});if(!ar.ok)throw Error('manifest');const timing=await ar.json();
+    if(timing.status!=='ready'||!Number.isInteger(timing.provider_id))throw Error('unavailable');
+    stage='provider';let data;
+    for(let attempt=0;attempt<2;attempt++){
+      try{const response=await fetch(`https://lrclib.net/api/get/${timing.provider_id}`,{signal:AbortSignal.timeout(20000)});if(!response.ok)throw Error('provider');data=await response.json();break}catch(error){if(attempt===1)throw error}
+    }
+    stage='hash';const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(data.plainLyrics||''));const hash=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
+    if(hash!==timing.plain_sha256)throw Error('provider text changed');stage='timing';const lines=coverTimedLines(data.plainLyrics,timing,t.duration_seconds||Infinity);if(!lines.length)throw Error('empty timing');
     if(request!==state.lyricRequest||state.current!==t.id)return;
-    storeLyric({text:data.plainLyrics,lines,offset:0,source:`LRCLIB · ${data.artistName} — ${data.trackName}`,external:true,providerId:data.id,timing:'cover-auto'});
+    state.lyric={lines,offset:0,source:`LRCLIB · ${data.artistName} — ${data.trackName}`,providerId:data.id,timing:'cover-auto'};
+    write(lyricCacheKey(t),state.lyric);state.lyricStatus='ready';renderLyrics();
   }catch(error){
-    console.warn('Cover timing unavailable:',error.message);
     if(request!==state.lyricRequest||state.current!==t.id)return;
-    if(!state.lyric){$('lyrics-query').value=title(t);findLyrics(true)}else $('karaoke-status').textContent='Тайминги оригинала · кавер можно настроить вручную';
+    $('lyrics-content').dataset.loadError=stage+':'+error.name;
+    state.lyricStatus=error.message==='unavailable'?'unavailable':'error';renderLyrics();
   }
 }
-function configureLyrics(){closeDialog('karaoke');showPlayer('lyrics');openDetail('lyrics');$('lyrics-search').hidden=false;$('lyrics-query').value=title(selected());$('lyrics-query').focus()}
 function setDetail(tab){
   $('lyrics-panel').hidden=tab!=='lyrics';$('queue-panel').hidden=tab!=='queue';
   $('lyrics-tab').setAttribute('aria-selected',String(tab==='lyrics'));$('queue-tab').setAttribute('aria-selected',String(tab==='queue'));
@@ -109,7 +114,6 @@ function renderCurrent(){
 }
 function renderPlayState(){
   for(const id of ['mini-play','play','karaoke-play']){$(id).innerHTML=icon(audio.paused?'play':'pause');$(id).setAttribute('aria-label',audio.paused?'Воспроизвести':'Пауза')}
-  $('sync-play').textContent=audio.paused?'Воспроизвести':'Пауза';
   $('shuffle').setAttribute('aria-pressed',String(state.shuffle));$('repeat').setAttribute('aria-pressed',String(state.repeat!=='off'));
   $('repeat').setAttribute('aria-label',{off:'Повтор выключен',all:'Повторять очередь',one:'Повторять одну запись'}[state.repeat]);$('repeat-one').hidden=state.repeat!=='one';
   document.querySelectorAll('.track').forEach(row=>{
@@ -123,14 +127,14 @@ async function playTrack(id,{queue,autoplay=true,restoreTime=0}={}){
   if(queue){state.queue=queue.filter(id=>state.byId.get(id)?.audio_url);if(state.shuffle)state.queue=shuffleQueue(state.queue,t.id)}
   if(!state.queue.includes(t.id))state.queue.push(t.id);
   if(state.current!==t.id){
-    ++state.lyricRequest;state.current=t.id;state.lyric=read('lyrics:'+t.id,null);state.lyricSearch=[];state.sync=null;state.follow=true;$('sync-editor').hidden=true;$('lyrics-search').hidden=true;$('lyrics-results').textContent='';$('lyrics-search-button').disabled=false;
+    ++state.lyricRequest;state.current=t.id;state.lyric=read(lyricCacheKey(t),null);state.lyricStatus=state.lyric?'ready':'idle';state.follow=true;
     audio.src=t.audio_url;seekRestore=restoreTime||null;$('play-error').textContent='';renderLyrics();
     const url=new URL(location.href);url.searchParams.set('track',t.id);history.replaceState(null,'',url);
     if('mediaSession'in navigator && 'MediaMetadata'in window)navigator.mediaSession.metadata=new MediaMetadata({title:title(t),artist:'fiquet',album:'Личный архив',artwork:t.cover_url?[{src:new URL(t.cover_url,document.baseURI).href}]:[]});
     renderCatalog();
   }
   renderCurrent();renderQueue();persist();
-  if($('karaoke-dialog').open){renderKaraoke();ensureKaraokeText()}
+  ensureKaraokeText();if($('karaoke-dialog').open)renderKaraoke();
   if(autoplay){const request=++playRequest;try{await audio.play();if(request!==playRequest)return;haptic()}catch(e){if(e.name!=='AbortError'){$('play-error').textContent='Нажми воспроизведение ещё раз. Если файл не загружается, проверь подключение.';toast('Не удалось запустить запись')}}}
 }
 function playFromList(id){
@@ -176,23 +180,23 @@ async function share(id){
   try{if(navigator.share)await navigator.share({title:`fiquet — ${title(t)}`,url:url.href});else{await navigator.clipboard.writeText(url.href);toast('Ссылка скопирована')}}catch(e){if(e.name!=='AbortError')toast('Ссылка: '+url.href)}
 }
 
+function lyricUnavailable(){
+  return state.lyricStatus==='loading'?['Готовим текст…','Он появится автоматически.']:state.lyricStatus==='error'?['Текст временно недоступен','Не удалось загрузить подготовленный текст. Повторим при следующем открытии.']:['Текст пока недоступен','Для этой записи пока не удалось подтвердить слова и тайминги.'];
+}
 function renderLyrics(){
   const lyric=state.lyric;
-  $('sync-lyrics').hidden=!lyric;$('reset-lyrics').hidden=!lyric;
-  $('lyric-offset').hidden=!lyric?.lines?.length;
-  $('offset-value').textContent=`${lyric?.offset||0} с`;
-  if(!lyric){$('lyrics-content').innerHTML=`<div class="lyrics-empty">${icon('text')}<h3>Пой вместе с fiquet</h3><p>Открой караоке: попробуем найти текст. Можно выбрать оригинал или импортировать TXT / LRC.</p></div>`;renderKaraoke();return}
-  const lines=lyric.lines||[];
-  $('lyrics-content').innerHTML=lines.length?`<div class="lyrics-body">${lyricMarkup(lines)}</div><p class="lyric-source">${esc(lyric.source)}${lyric.timing==='cover'?' · Тайминги настроены для этой записи.':lyric.timing==='cover-auto'?' · Автоматические тайминги кавера; возможны неточности.':lyric.external?' · Тайминги оригинала могут отличаться от кавера.':''}</p>`:`<div class="lyrics-body">${esc(lyric.text)}</div><p class="lyric-source">${esc(lyric.source)}</p>`;
+  if(!lyric){const [heading,description]=lyricUnavailable();$('lyrics-content').innerHTML=`<div class="lyrics-empty">${icon('text')}<h3>${heading}</h3><p>${description}</p></div>`;renderKaraoke();return}
+  $('lyrics-content').innerHTML=`<div class="lyrics-body">${lyricMarkup(lyric.lines)}</div><p class="lyric-source">${esc(lyric.source)}</p>`;
   renderKaraoke();highlightLyrics(true);
 }
 function lyricMarkup(lines){return lines.map((line,i)=>`<button class="lyric-line" data-lyric-line="${i}" aria-label="Перейти к ${formatTime(line.time)}">${line.words?.length?line.words.map((w,j)=>`<span class="lyric-word" data-word="${j}">${esc(w.text)}</span>`).join(''):esc(line.text)||'♪'}</button>`).join('')}
 function renderKaraoke(){
   const lyric=state.lyric,lines=lyric?.lines||[];
   $('karaoke-title').textContent=title(selected());
-  $('karaoke-lines').innerHTML=lines.length?lyricMarkup(lines):lyric?`<div class="plain-karaoke">${esc(lyric.text)}</div>`:`<div class="lyrics-empty"><h3>Текст появится здесь</h3><p>Ищем подходящую песню. Если совпадения нет, выбери текст через меню сверху или импортируй свой файл.</p></div>`;
-  $('karaoke-mode').textContent=lines.length?'fiquet · караоке':'fiquet · текст песни';
-  $('karaoke-status').textContent=!lyric?'Текст можно выбрать в меню ⋯':!lines.length?'Без таймингов · можно настроить вручную':lyric.timing==='cover'?'Синхронизировано с этой записью':lyric.timing==='cover-auto'?'Тайминги кавера · автоматически, возможны неточности':lyric.external?'Тайминги оригинала · настройка в меню ⋯':'Тайминги из LRC';
+  if(lines.length)$('karaoke-lines').innerHTML=lyricMarkup(lines);
+  else{const [heading,description]=lyricUnavailable();$('karaoke-lines').innerHTML=`<div class="lyrics-empty"><h3>${heading}</h3><p>${description}</p></div>`}
+  $('karaoke-mode').textContent='fiquet · караоке';
+  $('karaoke-status').textContent=lines.length?'Слова и тайминги подготовлены автоматически':state.lyricStatus==='loading'?'Загружаем подготовленный текст…':'';
   updateTime();
 }
 function highlightLyrics(force=false){
@@ -205,42 +209,9 @@ function highlightLyrics(force=false){
     const old=root.querySelector('.lyric-line.active'),changed=old?.dataset.lyricLine!==String(index),line=root.querySelector(`[data-lyric-line="${index}"]`);
     if(changed||force){root.querySelectorAll('.lyric-line').forEach(el=>{const i=Number(el.dataset.lyricLine);el.classList.toggle('active',i===index);el.classList.toggle('past',i<index);el.setAttribute('aria-current',i===index?'true':'false')});
       if(line&&(root!==$('karaoke-lines')||state.follow)){const box=root===$('karaoke-lines')?root:line.parentElement;box.scrollTo({top:Math.max(0,line.offsetTop-box.offsetTop-box.clientHeight*.38),behavior:force?'instant':'smooth'})}}
-    if(line){const words=state.lyric.lines[index]?.words;line.querySelectorAll('[data-word]').forEach(el=>{const progress=lyricWordProgress(words,Number(el.dataset.word),audio.currentTime+(state.lyric.offset||0),state.lyric.lines[index+1]?.time??Infinity);el.style.setProperty('--word-fill',`${progress*100}%`)})}
+    if(line){const words=state.lyric.lines[index]?.words;line.querySelectorAll('[data-word]').forEach(el=>{const progress=lyricWordProgress(words,Number(el.dataset.word),audio.currentTime+(state.lyric.offset||0),current?.end??state.lyric.lines[index+1]?.time??Infinity);el.style.setProperty('--word-fill',`${progress*100}%`)})}
   }
 }
-function storeLyric(lyric){state.lyric=lyric;if(!write('lyrics:'+state.current,lyric))toast('Текст показан, но хранилище устройства заполнено');renderLyrics()}
-async function findLyrics(automatic=false){
-  automatic=automatic===true;
-  const t=selected();if(!t)return;const q=$('lyrics-query').value.trim();if(!q){$('lyrics-query').focus();return}
-  const request=++state.lyricRequest,id=t.id;$('lyrics-results').textContent='Ищем текст…';$('lyrics-search-button').disabled=true;
-  try{
-    const r=await fetch('https://lrclib.net/api/search?'+new URLSearchParams({q}),{signal:AbortSignal.timeout(15000)});
-    if(!r.ok)throw Error('Сервис временно недоступен');const rows=await r.json();if(request!==state.lyricRequest||id!==state.current)return;
-    state.lyricSearch=Array.isArray(rows)?rows.filter(r=>r.plainLyrics||r.syncedLyrics).slice(0,12):[];
-    if(automatic){const best=state.lyricSearch.map((r,i)=>({i,score:lyricMatchScore(t,r)})).sort((a,b)=>b.score-a.score)[0];if(best?.score>=.85){selectLyrics(best.i);return}if(!state.lyric)$('karaoke-status').textContent='Выбери точное совпадение в меню ⋯';}
-    $('lyrics-results').innerHTML=state.lyricSearch.length?state.lyricSearch.map((r,i)=>`<button class="lyrics-result" data-lyrics-result="${i}"><strong>${esc(r.trackName)}</strong><small>${esc(r.artistName)} · ${formatTime(r.duration)} · ${r.syncedLyrics?'с таймингами':'только текст'}</small></button>`).join(''):'<p class="tiny muted">Текст не найден. Измени название или импортируй TXT / LRC.</p>';
-  }catch(e){if(request===state.lyricRequest)$('lyrics-results').textContent='Не удалось связаться с LRCLIB. Можно повторить поиск или добавить свой файл.'}
-  finally{if(request===state.lyricRequest)$('lyrics-search-button').disabled=false}
-}
-function selectLyrics(index){
-  const r=state.lyricSearch[index];if(!r)return;
-  storeLyric({text:r.plainLyrics||r.syncedLyrics,lines:parseLrc(r.syncedLyrics||''),offset:0,source:`LRCLIB · ${r.artistName} — ${r.trackName}`,external:true,providerId:r.id,timing:'original'});
-  $('lyrics-search').hidden=true;toast('Текст добавлен к этой записи');
-}
-function renderSync(){
-  const sync=state.sync;if(!sync)return;
-  $('sync-editor').hidden=false;$('sync-current').textContent=sync.texts[sync.times.length]||'Все строки отмечены';
-  $('sync-progress').textContent=`${sync.times.length} из ${sync.texts.length} строк · ${formatTime(audio.currentTime)}`;
-  $('sync-stamp').disabled=sync.times.length>=sync.texts.length;$('sync-undo').disabled=!sync.times.length;$('sync-save').disabled=sync.times.length!==sync.texts.length;
-  $('sync-save').textContent=sync.times.length===sync.texts.length?'Сохранить тайминги':'Отметь все строки';
-}
-function startSync(){
-  if(!state.lyric)return;
-  const texts=state.lyric.lines?.length?state.lyric.lines.map(l=>l.text):String(state.lyric.text).split(/\r?\n/).map(l=>l.trim()).filter(l=>l&&!/^\[[^\]]+\]$/.test(l));
-  if(texts.length<2){toast('Нужно хотя бы две строки текста');return}
-  state.sync={id:state.current,texts,times:[]};audio.pause();audio.currentTime=0;renderSync();$('sync-editor').scrollIntoView({behavior:'smooth',block:'center'});
-}
-
 function setupTelegram(){
   let ownedThemeKeys=[];
   const apply=()=>{const preference=read('theme','system');document.documentElement.dataset.theme=(inTelegram?tg.colorScheme:preference==='system'?(matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'):preference)==='light'?'light':'dark';
@@ -257,7 +228,7 @@ function setupTelegram(){
 }
 
 document.addEventListener('click',e=>{
-  const b=e.target.closest('[data-nav],[data-scope],[data-play],[data-favorite],[data-menu],[data-close],[data-action],[data-queue-play],[data-remove],[data-menu-action],[data-lyrics-result],[data-lyric-line]');if(!b||b.disabled)return;
+  const b=e.target.closest('[data-nav],[data-scope],[data-play],[data-favorite],[data-menu],[data-close],[data-action],[data-queue-play],[data-remove],[data-menu-action],[data-lyric-line]');if(!b||b.disabled)return;
   if(b.dataset.nav)setView(b.dataset.nav);
   else if(b.dataset.scope)setScope(b.dataset.scope);
   else if(b.dataset.play)playFromList(Number(b.dataset.play));
@@ -268,7 +239,6 @@ document.addEventListener('click',e=>{
   else if(b.dataset.queuePlay)playTrack(Number(b.dataset.queuePlay));
   else if(b.dataset.remove){state.queue=state.queue.filter(id=>id!==Number(b.dataset.remove));renderQueue();persist()}
   else if(b.dataset.menuAction){const id=state.menuTrack;if(b.dataset.menuAction==='favorite'){toggleFavorite(id);closeDialog('menu')}if(b.dataset.menuAction==='next')addQueue(id,true);if(b.dataset.menuAction==='queue')addQueue(id);if(b.dataset.menuAction==='share')share(id)}
-  else if(b.dataset.lyricsResult!=null)selectLyrics(Number(b.dataset.lyricsResult));
   else if(b.dataset.lyricLine!=null&&state.lyric){audio.currentTime=Math.min(audio.duration||Infinity,Math.max(0,state.lyric.lines[Number(b.dataset.lyricLine)].time-(state.lyric.offset||0)))}
 });
 $('search').addEventListener('input',()=>{state.query=$('search').value;state.visible=60;$('clear-search').hidden=!state.query;renderCatalog()});
@@ -277,7 +247,7 @@ $('load-more').onclick=()=>{state.visible+=60;renderCatalog()};
 $('see-full').onclick=()=>{setScope('full');$('list-title').scrollIntoView({behavior:'smooth',block:'start'})};
 $('play-full').onclick=()=>{const queue=state.tracks.filter(t=>t.full_length&&t.audio_url).map(t=>t.id);if(queue[0])playTrack(queue[0],{queue})};
 $('hero-shuffle').onclick=()=>{state.shuffle=true;const queue=shuffleQueue(state.tracks.filter(t=>['cover','music'].includes(t.classification)&&t.audio_url).map(t=>t.id));if(queue[0])playTrack(queue[0],{queue})};
-$('expand-player').onclick=()=>showPlayer();$('mini-play').onclick=togglePlay;$('play').onclick=togglePlay;$('karaoke-play').onclick=togglePlay;$('sync-play').onclick=togglePlay;
+$('expand-player').onclick=()=>showPlayer();$('mini-play').onclick=togglePlay;$('play').onclick=togglePlay;$('karaoke-play').onclick=togglePlay;
 for(const id of ['mini-favorite','now-favorite'])$(id).onclick=()=>state.current&&toggleFavorite(state.current);
 $('mini-next').onclick=()=>advance();$('next').onclick=()=>advance();$('previous').onclick=()=>advance(-1);
 $('shuffle').onclick=()=>{state.shuffle=!state.shuffle;if(state.shuffle)state.queue=shuffleQueue(state.queue,state.current);renderPlayState();renderQueue();persist();haptic()};
@@ -287,24 +257,13 @@ for(const id of ['seek','karaoke-seek']){
   $(id).addEventListener('pointerdown',()=>{seeking=true});$(id).addEventListener('blur',()=>{seeking=false});
 }
 window.addEventListener('pointerup',()=>{seeking=false;updateTime()});
-$('open-lyrics').onclick=showKaraoke;$('launch-karaoke').onclick=showKaraoke;$('karaoke-edit').onclick=configureLyrics;
+$('open-lyrics').onclick=showKaraoke;$('launch-karaoke').onclick=showKaraoke;
 $('open-queue').onclick=()=>openDetail('queue');$('lyrics-tab').onclick=()=>setDetail('lyrics');$('queue-tab').onclick=()=>setDetail('queue');
 $('karaoke-next').onclick=()=>advance();$('karaoke-previous').onclick=()=>advance(-1);
 $('karaoke-follow').onclick=()=>{state.follow=true;$('karaoke-follow').hidden=true;highlightLyrics(true)};
 for(const event of ['wheel','touchstart'])$('karaoke-lines').addEventListener(event,()=>{state.follow=false;$('karaoke-follow').hidden=!state.lyric?.lines?.length},{passive:true});
-$('sync-lyrics').onclick=startSync;
-$('sync-stamp').onclick=()=>{const sync=state.sync;if(!sync||sync.id!==state.current||sync.times.length>=sync.texts.length)return;const time=audio.currentTime;if(sync.times.length&&time<=sync.times.at(-1)){toast('Следующая строка должна начинаться позже предыдущей');return}sync.times.push(time);renderSync();haptic()};
-$('sync-undo').onclick=()=>{state.sync?.times.pop();renderSync()};
-$('sync-save').onclick=()=>{const sync=state.sync;if(!sync||sync.id!==state.current||sync.times.length!==sync.texts.length)return;storeLyric({...state.lyric,lines:sync.times.map((time,i)=>({time,text:sync.texts[i]})),offset:0,timing:'cover'});state.sync=null;$('sync-editor').hidden=true;toast('Тайминги сохранены для этой записи')};
-$('sync-cancel').onclick=()=>{state.sync=null;$('sync-editor').hidden=true};
-$('reset-lyrics').onclick=()=>{write('lyrics:'+state.current,null);state.lyric=null;state.sync=null;state.autoTried.delete(state.current);$('sync-editor').hidden=true;renderLyrics();toast('Текст удалён с этого устройства')};
-$('player-menu').onclick=()=>showMenu(state.current);$('share-track').onclick=()=>share(state.current);
-$('find-lyrics').onclick=()=>{$('lyrics-search').hidden=!$('lyrics-search').hidden;if(!$('lyrics-search').hidden){$('lyrics-query').value=title(selected());$('lyrics-query').focus()}};
-$('lyrics-search-button').onclick=findLyrics;$('lyrics-query').addEventListener('keydown',e=>{if(e.key==='Enter')findLyrics()});
-$('lyrics-file').addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file||!selected())return;if(file.size>200000){toast('Выбери текстовый файл до 200 КБ');return}const id=state.current,text=await file.text();if(id!==state.current)return;storeLyric({text,lines:parseLrc(text),offset:0,source:`Твой файл · ${file.name}`,external:false});e.target.value='';toast('Текст сохранён на этом устройстве')});
-for(const [id,step]of [['offset-minus',-1],['offset-plus',1]])$(id).onclick=()=>{if(state.lyric){state.lyric.offset=(state.lyric.offset||0)+step;write('lyrics:'+state.current,state.lyric);$('offset-value').textContent=`${state.lyric.offset} с`;highlightLyrics()}};
 for(const dialog of document.querySelectorAll('dialog')){dialog.addEventListener('cancel',e=>{e.preventDefault();dialog.close();syncBack()});dialog.addEventListener('click',e=>{if(e.target!==dialog)return;const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom){dialog.close();syncBack()}})}
-audio.addEventListener('play',renderPlayState);audio.addEventListener('pause',()=>{renderPlayState();persist()});audio.addEventListener('timeupdate',()=>{updateTime();if(state.sync)renderSync()});audio.addEventListener('ended',()=>advance(1,true));
+audio.addEventListener('play',renderPlayState);audio.addEventListener('pause',()=>{renderPlayState();persist()});audio.addEventListener('timeupdate',updateTime);audio.addEventListener('ended',()=>advance(1,true));
 audio.addEventListener('loadedmetadata',()=>{if(seekRestore){audio.currentTime=Math.max(0,Math.min(seekRestore,audio.duration||0));seekRestore=null}updateTime()});
 audio.addEventListener('error',()=>{$('play-error').textContent='Запись не загрузилась. Проверь интернет или выбери другую.';toast('Не удалось загрузить аудио');renderPlayState()});
 document.addEventListener('keydown',e=>{if(/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)||e.target.isContentEditable)return;if(e.code==='Space'&&e.target===document.body){e.preventDefault();togglePlay()}if(e.altKey&&e.key==='ArrowRight')advance();if(e.altKey&&e.key==='ArrowLeft')advance(-1)});
@@ -319,8 +278,8 @@ async function init(){
     for(const id of state.favorites)if(!state.byId.has(id))state.favorites.delete(id);
     const full=state.tracks.filter(t=>t.full_length&&t.status==='ready').length,music=state.tracks.filter(t=>['cover','music'].includes(t.classification)&&t.status==='ready').length,all=state.tracks.filter(t=>t.status==='ready').length;
     $('hero-meta').textContent=`${formatCount(full,['полный кавер','полных кавера','полных каверов'])} · ${formatCount(music,['запись','записи','записей'])}`;
-    $('about-stats').innerHTML=`<div class="about-stat"><span>Полные каверы</span><strong>${full}</strong></div><div class="about-stat"><span>Музыка в плеере</span><strong>${all}</strong></div><div class="about-stat"><span>Проверено аудиофайлов</span><strong>${state.stats.audited||all}</strong></div><div class="about-stat"><span>Речь и спорные записи исключены</span><strong>${state.stats.excluded||0}</strong></div><div class="about-stat"><span>Медиа без доступного файла</span><strong>${state.tracks.filter(t=>t.status==='unavailable').length}</strong></div>`;
-    renderFeatured();renderCatalog();
+    $('about-stats').innerHTML=`<div class="about-stat"><span>Полные каверы</span><strong>${full}</strong></div><div class="about-stat"><span>Музыка в плеере</span><strong>${all}</strong></div><div class="about-stat"><span>Текст и караоке готовы</span><strong>${state.stats.karaoke||0}</strong></div><div class="about-stat"><span>Проверено аудиофайлов</span><strong>${state.stats.audited||all}</strong></div><div class="about-stat"><span>Речь и спорные записи исключены</span><strong>${state.stats.excluded||0}</strong></div><div class="about-stat"><span>Медиа без доступного файла</span><strong>${state.tracks.filter(t=>t.status==='unavailable').length}</strong></div>`;
+    $('karaoke-count').textContent=state.stats.karaoke||0;renderFeatured();renderCatalog();
     const id=Number(params.get('track')||stored.id),t=state.byId.get(id);
     if(t?.audio_url){state.queue=Array.isArray(stored.queue)?stored.queue.filter(id=>state.byId.get(id)?.audio_url):[];state.shuffle=Boolean(stored.shuffle);state.repeat=['off','all','one'].includes(stored.repeat)?stored.repeat:'off';if(!state.queue.length)state.queue=state.tracks.filter(t=>t.full_length&&t.audio_url).map(t=>t.id);await playTrack(id,{autoplay:false,restoreTime:id===stored.id?Number(stored.time)||0:0})}
     if(config.mode==='static'&&'serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
