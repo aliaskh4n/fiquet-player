@@ -49,41 +49,16 @@ export function nextId(queue, current, {direction=1, repeat='off', ended=false}=
   if (next>=0 && next<queue.length) return queue[next];
   return repeat==='all' ? queue[(next+queue.length)%queue.length] : null;
 }
-export function parseLrc(text) {
-  const lines=[];
-  let offset=0;
-  for (const raw of String(text).split(/\r?\n/)) {
-    const om=raw.match(/^\[offset:([+-]?\d+)\]/i); if(om) {offset=Number(om[1])/1000;continue;}
-    const times=[...raw.matchAll(/\[(\d+):(\d{2}(?:\.\d+)?)\]/g)];
-    const content=raw.replace(/\[[^\]]*\]/g,'').replace(/<\d+:\d{2}(?:\.\d+)?>/g,'').trim();
-    const words=[...raw.matchAll(/<(\d+):(\d{2}(?:\.\d+)?)>([^<]*)/g)].map(w=>({time:Number(w[1])*60+Number(w[2]),text:w[3]})).filter(w=>w.text.trim());
-    for(const time of times) lines.push({time:Number(time[1])*60+Number(time[2]),text:content,...(words.length?{words}: {})});
-  }
-  return lines.map(l=>({...l,time:l.time+offset,...(l.words?{words:l.words.map(w=>({...w,time:w.time+offset}))}:{})})).sort((a,b)=>a.time-b.time);
-}
-export function lyricWordProgress(words,index,time,lineEnd=Infinity){
-  const start=words[index]?.time,end=words[index]?.end??words[index+1]?.time??lineEnd;
-  if(!Number.isFinite(start)||time<start)return 0;
-  if(!Number.isFinite(end)||end<=start)return 1;
-  return Math.max(0,Math.min(1,(time-start)/(end-start)));
-}
 export function telegramThemeVars(params={}){
   const vars={};
   for(const key of ['bg_color','text_color','hint_color','link_color','button_color','button_text_color','secondary_bg_color','header_bg_color','bottom_bar_bg_color','accent_text_color','section_bg_color','section_header_text_color','subtitle_text_color','section_separator_color','destructive_text_color'])
     if(/^#[0-9a-f]{6}$/i.test(params[key]||''))vars['--tg-theme-'+key.replaceAll('_','-')]=params[key];
   return vars;
 }
-export function coverTimedLines(plain,alignment,duration=Infinity){
-  const textLines=String(plain).split(/\r?\n/).map(s=>s.trim().normalize('NFC')).filter(s=>s&&!/^\[[^\]]+\]$/.test(s));
-  if(!Array.isArray(alignment?.lines))return [];
-  return alignment.lines.filter(l=>Number.isInteger(l.index)&&l.index>=0&&l.index<textLines.length&&Number.isFinite(l.start)&&l.start>=0&&l.start<duration&&Number.isFinite(l.end)&&l.end>=l.start)
-    .map(l=>{
-      const text=textLines[l.index],matches=[...text.matchAll(/[\p{L}\p{N}_]+/gu)];
-      const mapped=new Map((l.words||[]).filter(w=>Number.isInteger(w.index)&&w.index>=0&&w.index<matches.length&&Number.isFinite(w.start)&&w.start>=l.start&&w.start<=l.end&&Number.isFinite(w.end)&&w.end>=w.start&&w.end<=l.end).map(w=>[w.index,w]));
-      // Word highlights use actual matched word timestamps; incomplete lines stay line-based.
-      const words=matches.length&&mapped.size===matches.length?matches.map((match,i)=>({time:mapped.get(i).start,end:mapped.get(i).end,text:text.slice(i===0?0:match.index,matches[i+1]?.index??text.length)})):null;
-      return {time:l.start,end:l.end,text,...(words?{words}:{})};
-    }).sort((a,b)=>a.time-b.time);
+export function transcriptLines(data,duration=Infinity){
+  if(!Array.isArray(data?.lines))return [];
+  return data.lines.filter(l=>typeof l.text==='string'&&l.text.trim()&&Number.isFinite(l.start)&&l.start>=0&&l.start<duration&&Number.isFinite(l.end)&&l.end>l.start&&l.end<=duration+1)
+    .map(l=>({time:l.start,end:l.end,text:l.text.trim().normalize('NFC')})).sort((a,b)=>a.time-b.time);
 }
 export function activeLyric(lines, time, offset=0) {
   let index=-1;

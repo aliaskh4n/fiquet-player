@@ -1,5 +1,5 @@
-const CACHE='fiquet-player-700376370432';
-const CORE=["./", "./styles.css?v=7c8a06543512", "./config.js?v=9dfda38d7f1d", "./app.js?v=dac12bcd666d", "./core.mjs?v=acde295473cc", "./manifest.webmanifest", "./assets/icon.svg", "./assets/artist.webp", "./data/catalog.json"];
+const CACHE='fiquet-player-d7447f78effb';
+const CORE=["./", "./styles.css?v=63a4514429ba", "./config.js?v=9dfda38d7f1d", "./app.js?v=dc159dcd8328", "./core.mjs?v=22419c8678fd", "./manifest.webmanifest", "./assets/icon.svg", "./assets/artist.webp", "./data/catalog.json"];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(CORE)));self.skipWaiting()});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('fiquet-player-')&&key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim()))});
 self.addEventListener('fetch',event=>{
