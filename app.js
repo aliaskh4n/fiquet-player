@@ -26,7 +26,7 @@ function safeSource(url){try{const u=new URL(url);return ['http:','https:'].incl
 function renderCatalog(){
   const rows=filtered(), shown=rows.slice(0,state.visible);
   $('list-count').textContent=formatCount(rows.length);
-  const names={cover:'Все каверы и музыка',full:'Полные записи',karaoke:'Караоке',all:'Вся музыка',candidate:'Музыкальные записи',unavailable:'Пока недоступны'};
+  const names={cover:'Все каверы и музыка',full:'Полные записи',karaoke:'Текст',all:'Вся музыка',candidate:'Музыкальные записи',unavailable:'Пока недоступны'};
   $('list-title').textContent=state.view==='favorites'?'Твои записи':state.query?'Результаты поиска':names[state.scope];
   $('filters').hidden=state.view==='favorites';
   document.querySelectorAll('[data-scope]').forEach(b=>b.classList.toggle('active',b.dataset.scope===state.scope));
@@ -41,7 +41,7 @@ function renderFeatured(){
   const full=state.tracks.filter(t=>t.full_length&&t.status==='ready');
   const picks=[1079,1071,1073,1081].map(id=>full.find(t=>t.id===id)).filter(Boolean);
   const chosen=picks.length===4?picks:full.slice(0,4);
-  $('featured').innerHTML=chosen.map(t=>`<button class="featured-card" data-play="${t.id}" aria-label="Слушать: ${esc(title(t))}"><div class="featured-art">${art(t)}${t.lyrics_ready?'<span class="karaoke-badge">Караоке</span>':''}<span class="featured-play">${icon('play')}</span></div><strong>${esc(title(t))}</strong><small>fiquet · ${formatTime(t.duration_seconds)}</small></button>`).join('');
+  $('featured').innerHTML=chosen.map(t=>`<button class="featured-card" data-play="${t.id}" aria-label="Слушать: ${esc(title(t))}"><div class="featured-art">${art(t)}${t.lyrics_ready?'<span class="karaoke-badge">Текст</span>':''}<span class="featured-play">${icon('play')}</span></div><strong>${esc(title(t))}</strong><small>fiquet · ${formatTime(t.duration_seconds)}</small></button>`).join('');
 }
 function setView(view){
   state.view=view;state.query='';state.visible=60;$('search').value='';$('clear-search').hidden=true;
@@ -197,7 +197,7 @@ function renderKaraoke(){
   $('karaoke-title').textContent=title(selected());
   if(lines.length)$('karaoke-lines').innerHTML=lyricMarkup(lines);
   else{const [heading,description]=lyricUnavailable();$('karaoke-lines').innerHTML=`<div class="lyrics-empty"><h3>${heading}</h3><p>${description}</p></div>`}
-  $('karaoke-mode').textContent='fiquet · караоке';
+  $('karaoke-mode').textContent='fiquet · текст';
   $('karaoke-status').textContent=lines.length?'Текст песни · построчная подсветка':state.lyricStatus==='loading'?'Загружаем подготовленный текст…':'';
   updateTime();
 }
@@ -285,7 +285,7 @@ async function init(){
     for(const id of state.favorites)if(!state.byId.has(id))state.favorites.delete(id);
     const full=state.tracks.filter(t=>t.full_length&&t.status==='ready').length,music=state.tracks.filter(t=>['cover','music'].includes(t.classification)&&t.status==='ready').length,all=state.tracks.filter(t=>t.status==='ready').length;
     $('hero-meta').textContent=`${formatCount(full,['полный кавер','полных кавера','полных каверов'])} · ${formatCount(music,['запись','записи','записей'])}`;
-    $('about-stats').innerHTML=`<div class="about-stat"><span>Полные каверы</span><strong>${full}</strong></div><div class="about-stat"><span>Музыка в плеере</span><strong>${all}</strong></div><div class="about-stat"><span>Текст и караоке готовы</span><strong>${state.stats.karaoke||0}</strong></div><div class="about-stat"><span>Проверено аудиофайлов</span><strong>${state.stats.audited||all}</strong></div><div class="about-stat"><span>Речь и спорные записи исключены</span><strong>${state.stats.excluded||0}</strong></div><div class="about-stat"><span>Медиа без доступного файла</span><strong>${state.tracks.filter(t=>t.status==='unavailable').length}</strong></div>`;
+    $('about-stats').innerHTML=`<div class="about-stat"><span>Полные каверы</span><strong>${full}</strong></div><div class="about-stat"><span>Музыка в плеере</span><strong>${all}</strong></div><div class="about-stat"><span>Готовые тексты</span><strong>${state.stats.karaoke||0}</strong></div><div class="about-stat"><span>Проверено аудиофайлов</span><strong>${state.stats.audited||all}</strong></div><div class="about-stat"><span>Речь и спорные записи исключены</span><strong>${state.stats.excluded||0}</strong></div><div class="about-stat"><span>Медиа без доступного файла</span><strong>${state.tracks.filter(t=>t.status==='unavailable').length}</strong></div>`;
     $('karaoke-count').textContent=state.stats.karaoke||0;renderFeatured();renderCatalog();
     const id=Number(params.get('track')||stored.id),t=state.byId.get(id);
     if(t?.audio_url){state.queue=Array.isArray(stored.queue)?stored.queue.filter(id=>state.byId.get(id)?.audio_url):[];state.shuffle=Boolean(stored.shuffle);state.repeat=['off','all','one'].includes(stored.repeat)?stored.repeat:'off';if(!state.queue.length)state.queue=state.tracks.filter(t=>t.full_length&&t.audio_url).map(t=>t.id);await playTrack(id,{autoplay:false,restoreTime:id===stored.id?Number(stored.time)||0:0})}
