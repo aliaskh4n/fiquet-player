@@ -16,6 +16,8 @@
 .karaoke-badge{position:absolute;left:8px;top:8px;border-radius:6px;padding:5px 7px;background:var(--accent);color:var(--accent-text);font-size:10px;font-weight:600}
 
 /* Recording subtitles: one active line centered in the scroll viewport. */
+.source-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.source-link{display:flex;align-items:center;gap:11px;min-width:0;min-height:66px;padding:12px 14px;border-radius:12px;background:var(--surface);color:var(--text)}.source-link>svg{width:26px;height:26px;color:var(--link)}.source-link>span{min-width:0}.source-link strong{display:block;font-size:14px;font-weight:600}.source-link small{display:block;margin-top:4px;color:var(--muted);font-size:12px;white-space:nowrap}.source-link:hover{background:color-mix(in srgb,var(--accent) 10%,var(--surface))}.source-link:active{opacity:.75}
+@media(max-width:760px){.source-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.source-link{min-height:62px;padding:10px;gap:9px}.source-link>svg{width:23px;height:23px}.source-link strong{font-size:13px}.source-link small{font-size:11px}}
 .lyrics-body,.karaoke-lines{position:relative;scroll-behavior:smooth;padding-block:var(--lyrics-spacer,30vh);overflow-anchor:none}
 .lyric-line{color:var(--muted);opacity:.48;transition:color .22s,opacity .22s;transform:none!important;background:none!important;-webkit-text-fill-color:currentColor!important}
 .lyric-line.active{color:var(--text);opacity:1;transform:none!important}

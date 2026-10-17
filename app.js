@@ -45,7 +45,7 @@ function renderFeatured(){
 }
 function setView(view){
   state.view=view;state.query='';state.visible=60;$('search').value='';$('clear-search').hidden=true;
-  $('hero').hidden=view!=='library';$('featured-section').hidden=view!=='library';$('search-section').hidden=view!=='search';$('favorites-heading').hidden=view!=='favorites';
+  $('hero').hidden=view!=='library';$('artist-sources').hidden=view!=='library';$('featured-section').hidden=view!=='library';$('search-section').hidden=view!=='search';$('favorites-heading').hidden=view!=='favorites';
   $('breadcrumb').textContent={library:'Твоя библиотека',search:'Поиск по архиву',favorites:'Твоё избранное'}[view];
   document.querySelectorAll('[data-nav]').forEach(b=>b.classList.toggle('active',b.dataset.nav===view));
   renderCatalog();window.scrollTo({top:0,behavior:'instant'});if(view==='search')$('search').focus();haptic();

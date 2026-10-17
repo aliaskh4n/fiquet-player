@@ -26,6 +26,7 @@
 - Избранное, очередь, перемешивание, повтор, перемотка, Media Session и восстановление позиции без автозапуска.
 - Поиск **записей** по названию, подписи и ссылке на Telegram-пост.
 - 19 фотографий из открытых публикаций как обложки. Источники доступны в меню трека и `assets/photos.json`.
+- На главном экране — страницы fiquet в Telegram, Pinterest, TikTok, Instagram и оба профиля SoundCloud.
 
 Это неофициальный плеер. В репозитории нет SQLite, исходных видео, личных Telegram-сессий или серверных секретов.
 
@@ -37,4 +38,4 @@
 
 Для запуска внутри Telegram используется HTTPS-адрес сайта. Привязка к конкретному боту не выполнялась. `initData` не используется как авторизация. Фоновое воспроизведение на физическом телефоне отдельно не проверялось.
 
-Источники: [@woeiwjw](https://t.me/woeiwjw), связанный старый [SoundCloud-профиль](https://soundcloud.com/d-d-55812050). Полнота по всему интернету не подтверждена.
+Страницы fiquet: [Telegram @woeiwjw](https://t.me/woeiwjw), [Pinterest](https://www.pinterest.com/ohnomisterfish/), [TikTok @keyhdi](https://www.tiktok.com/@keyhdi), [Instagram @fiquet_09](https://www.instagram.com/fiquet_09/), [SoundCloud fiquet](https://soundcloud.com/fiquet), [старый SoundCloud с каверами](https://soundcloud.com/d-d-55812050). Полнота по всему интернету не подтверждена.
